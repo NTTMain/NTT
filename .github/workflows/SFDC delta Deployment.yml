@@ -1,98 +1,53 @@
-name: Salesforce CI/CD with Docker CLI and SGD
+name: Delta deploy to UAT
 
 on:
   push:
-    branches:
-      - Dev
-      - QA
-  pull_request:
-    branches:
-      - Dev
-      - QA
-  workflow_dispatch:
-    inputs:
-      run_tests:
-        description: "Run Apex tests?"
-        required: true
-        type: boolean
-        default: true
+    branches:    
+      - main
 
 jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    container:
-      image: salesforce/cli:latest-full
-
-    env:
-      TEST_FLAG: ${{ github.event.inputs.run_tests || 'true' }}
-
+  Delta-Deploy-UAT:
+    runs-on:  ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Set up Node (for sfdx-git-delta)
-        uses: actions/setup-node@v3
+      # Install Salesforce CLI
+      - name: Install Salesforce CLI
+        run: |
+          npm install sfdx-cli --global
+          sfdx --version
+      # SFDX-Git-Delta
+      - name: Install plugins
+        run: |
+          echo y | sfdx plugins:install sfdx-git-delta
+          sfdx plugins
+      # Install utilities
+      - name: Install utilities
+        run: |
+         pip install yq
+         xq --version
+      # Checkout the code in the pull request
+      - name: Checkout
+        uses: actions/checkout@v3
         with:
-          node-version: '20'
-
-      - name: Install sfdx-git-delta
-        run: npm install -g sfdx-git-delta@4.9.0
-
-      # Identify branch
-      - name: Print Branch
-        run: echo "Branch is ${GITHUB_REF}"
-
-      # Authenticate for Dev
-      - name: Authenticate to Dev Org
-        if: github.ref == 'refs/heads/Dev' || github.base_ref == 'Dev'
+          fetch-depth: 0
+      # Authenticate to target org
+      - name: "Authenticate to Org"
         run: |
-          echo "${{ secrets.DEV_SFDX_URL }}" > devAuth.txt
-          sf org login sfdx-url -f devAuth.txt -a DevOrg -s 
-
-      # Authenticate for QA
-      - name: Authenticate to QA Org
-        if: github.ref == 'refs/heads/QA' || github.base_ref == 'QA'
+          echo ${{ secrets.SFDXAUTHURL_UAT }} > ./SFDX_URL.txt
+          sfdx force:auth:sfdxurl:store -f ./SFDX_URL.txt --setdefaultusername
+      # Delta deploy
+      - name: "Delta deploy"
         run: |
-          echo "${{ secrets.QA_SFDX_URL }}" > qaAuth.txt
-          sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
-
-      # Generate delta package using sfdx-git-delta
-      - name: Generate Delta Package
-        id: generate_delta
-        run: |
-          echo "Generating delta package..."
-          mkdir -p sgd
-          # Detect base branch
-          if [ "${GITHUB_REF}" == "refs/heads/Dev" ]; then
-            BASE_BRANCH="main"
-          elif [ "${GITHUB_REF}" == "refs/heads/QA" ]; then
-            BASE_BRANCH="Dev"
+          sfdx sgd:source:delta --to "HEAD" --from "HEAD~1" --output "." -i .forceignore
+          echo "--- package.xml generated with added and modified metadata ---"
+          cat package/package.xml
+          echo
+          echo "--- Apex Tests to be executed ---"
+          export APEX_CLASSES=$(xq . < package/package.xml | jq '.Package.types | [.] | flatten | map(select(.name=="ApexClass")) | .[] | .members | [.] | flatten | map(select(. | index("*") | not)) | unique | join(",")' -r)
+          echo $APEX_CLASSES
+          echo
+          echo "--- Delta Deploy ---"
+          if [ -z "$APEX_CLASSES" ]; then
+            sfdx force:source:deploy -x package/package.xml -w 30
           else
-            BASE_BRANCH="main"
-          fi
-          echo "Base branch: $BASE_BRANCH"
-          sgd force:source:delta --to $BASE_BRANCH --output sgd --delete
-
-      # Validate Deployment (Pull Request)
-      - name: Validate Deployment (checkonly)
-        if: github.event_name == 'pull_request'
-        run: |
-          echo "Running validation deployment (checkonly)..."
-          if [ "${TEST_FLAG}" = "true" ]; then
-            sf project deploy validate -l RunLocalTests -w 60 --source-dir sgd
-          else
-            sf project deploy validate -l NoTestRun -w 60 --source-dir sgd
-          fi
-
-      # Actual deployment (Push to Dev or QA)
-      - name: Deploy to Salesforce
-        if: github.event_name == 'push'
-        run: |
-          echo "Starting actual deployment..."
-          if [ "${TEST_FLAG}" = "true" ]; then
-            echo "Running tests during deploy..."
-            sf project deploy start -l RunLocalTests -w 60 --source-dir sgd
-          else
-            echo "Deploying without tests..."
-            sf project deploy start -l NoTestRun -w 60 --source-dir sgd
+            sfdx force:source:deploy -x package/package.xml -w 30 -l RunSpecifiedTests -r "$APEX_CLASSES"
           fi
