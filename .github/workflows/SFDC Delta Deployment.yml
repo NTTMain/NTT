@@ -1,5 +1,5 @@
 name: Salesforce CI/CD with Docker CLI + sfdx-git-delta
-name: Salesforce CI/CD with Docker CLI
+
 
 on:
   push:
@@ -31,9 +31,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v4
         with:
-fetch-depth: 0  # Required for diff detection
-
-      # ---------------------------------------- 
+fetch-depth: 0  # Required for diff detection 
       - name: Install sfdx-git-delta
         run: 
           echo "Installing sfdx-git-delta..."
