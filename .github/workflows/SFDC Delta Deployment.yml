@@ -1,0 +1,117 @@
+name: Salesforce CI/CD with Docker CLI
+
+on:
+  push:
+    branches:
+      - Dev
+      - QA
+  pull_request:
+    branches:
+      - Dev
+      - QA
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: "Run Apex tests?"
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    container:
+      image: salesforce/cli:latest-full
+
+    env:
+      TEST_FLAG: ${{ inputs.run_tests || 'true' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Required for diff detection
+
+      # -----------------------------------------
+      # Install sfdx-git-delta (SGD)
+      # -----------------------------------------
+      - name: Install sfdx-git-delta
+        run: |
+          echo "Installing sfdx-git-delta..."
+          git clone https://github.com/scolladon/sfdx-git-delta.git
+          cd sfdx-git-delta
+          npm install
+          npm link
+
+      # Identify branch
+      - name: Print Branch
+        run: echo "Branch is ${GITHUB_REF}"
+
+      # Authenticate for Dev
+      - name: Authenticate to Dev Org
+        if: github.ref == 'refs/heads/Dev' || github.base_ref == 'Dev'
+        run: |
+          echo "${{ secrets.DEV_SFDX_URL }}" > devAuth.txt
+          sf org login sfdx-url -f devAuth.txt -a DevOrg -s 
+
+      # Authenticate for QA
+      - name: Authenticate to QA Org
+        if: github.ref == 'refs/heads/QA' || github.base_ref == 'QA'
+        run: |
+          echo "${{ secrets.QA_SFDX_URL }}" > qaAuth.txt
+          sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
+
+      # -----------------------------------------
+      # Generate Delta Using sfdx-git-delta (SGD)
+      # -----------------------------------------
+      - name: Generate Delta
+        run: |
+          mkdir delta
+          echo "Generating delta for changed metadata..."
+          sgd --to HEAD --from HEAD~1 --output delta/
+
+      # -----------------------------------------
+      # Pull Request → Validate Deployment (Checkonly)
+      # -----------------------------------------
+      - name: Validate Deployment (checkonly)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Running delta validation (checkonly)..."
+
+          if [ -z "$(ls -A delta)" ]; then
+            echo "No changes detected. Skipping validation."
+            exit 0
+          fi
+
+          if [ "${TEST_FLAG}" = "true" ]; then
+            sf project deploy validate \
+              -l RunLocalTests \
+              -w 60 \
+              --source-dir delta
+          else
+            sf project deploy validate \
+              -l NoTestRun \
+              -w 60 \
+              --source-dir delta
+          fi
+
+      # -----------------------------------------
+      # Push → Actual Deployment (Delta Deploy)
+      # -----------------------------------------
+      - name: Deploy to Salesforce
+        if: github.event_name == 'push'
+        run: |
+          echo "Starting delta deployment..."
+
+          if [ -z "$(ls -A delta)" ]; then
+            echo "No changes to deploy. Skipping deployment."
+            exit 0
+          fi
+
+          if [ "${TEST_FLAG}" = "true" ]; then
+            echo "Running tests during delta deploy..."
+            sf project deploy start -l RunLocalTests -w 60 --source-dir delta
+          else
+            echo "Deploying without tests..."
+            sf project deploy start -l NoTestRun -w 60 --source-dir delta
+          fi
