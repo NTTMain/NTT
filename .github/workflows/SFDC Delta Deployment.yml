@@ -52,14 +52,14 @@ jobs:
 
       # Authenticate Dev
       - name: Authenticate to Dev Org
-        if: github.ref = 'refs/heads/Dev' || github.base_ref = 'Dev'
+        if: github.ref == 'refs/heads/Dev' || github.base_ref == 'Dev'
         run: |
           echo "${{ secrets.DEV_SFDX_URL }}" > devAuth.txt
           sf org login sfdx-url -f devAuth.txt -a DevOrg -s
 
       # Authenticate QA
       - name: Authenticate to QA Org
-        if: github.ref = 'refs/heads/QA' || github.base_ref = 'QA'
+        if: github.ref == 'refs/heads/QA' || github.base_ref == 'QA'
         run: |
           echo "${{ secrets.QA_SFDX_URL }}" > qaAuth.txt
           sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
