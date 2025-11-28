@@ -57,7 +57,7 @@ jobs:
       - name: Determine Delta Changes
         run: |
           echo "Determining changed metadata..."
-         npx sgd -t metadata --to HEAD^ --from HEAD --output delta
+         npx sfdx-git-delta -t metadata --to HEAD^ --from HEAD --output delta
 
       # Validation before merge (Pull Request)
       - name: Validate Deployment (checkonly)
