@@ -33,8 +33,7 @@ jobs:
         with:
 fetch-depth: 0  # Required for diff detection
 
-      # -----------------------------------------
-      # Install sfdx-git-delta 
+      # ---------------------------------------- 
       - name: Install sfdx-git-delta
         run: 
           echo "Installing sfdx-git-delta..."
