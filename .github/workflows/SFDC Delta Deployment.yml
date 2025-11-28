@@ -1,1 +1,88 @@
+name: Salesforce CI/CD with Docker CLI + sfdx-git-delta
+
+on:
+  push:
+    branches:
+      - Dev
+      - QA
+  pull_request:
+    branches:
+      - Dev
+      - QA
+  workflow_dispatch:
+    inputs:
+      run_tests:
+        description: "Run Apex tests?"
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    container:
+      image: salesforce/cli:latest-full
+
+    env:
+      TEST_FLAG: ${{ inputs.run_tests || 'true' }}
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # REQUIRED for sfdx-git-delta
+
+      - name: Print Branch
+        run: echo "Branch is ${GITHUB_REF}"
+
+      # Install sfdx-git-delta
+      - name: Install sfdx-git-delta
+        run: |
+          npm install -g sfdx-git-delta
+
+      # Generate the delta package
+      - name: Generate Delta
+        run: |
+          echo "Generating delta for this commit..."
+          mkdir -p delta
+          # Compare last commit vs previous commit
+          sgd --from "HEAD~1" --to "HEAD" --output "delta"
+          echo "Generated delta contents:"
+          ls -R delta
+
+      # Authenticate Dev
+      - name: Authenticate to Dev Org
+        if: github.ref == 'refs/heads/Dev' || github.base_ref == 'Dev'
+        run: |
+          echo "${{ secrets.DEV_SFDX_URL }}" > devAuth.txt
+          sf org login sfdx-url -f devAuth.txt -a DevOrg -s
+
+      # Authenticate QA
+      - name: Authenticate to QA Org
+        if: github.ref == 'refs/heads/QA' || github.base_ref == 'QA'
+        run: |
+          echo "${{ secrets.QA_SFDX_URL }}" > qaAuth.txt
+          sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
+
+      # VALIDATION (PR only)
+      - name: Validate Deployment (checkonly)
+        if: github.event_name == 'pull_request'
+        run: |
+          echo "Running validation deployment (checkonly) on delta..."
+          if [ "${TEST_FLAG}" = "true" ]; then
+            sf project deploy validate --source-dir delta/package -l RunLocalTests -w 60
+          else
+            sf project deploy validate --source-dir delta/package -l NoTestRun -w 60
+          fi
+
+      # DEPLOYMENT (Push only)
+      - name: Deploy to Salesforce
+        if: github.event_name == 'push'
+        run: |
+          echo "Deploying delta package..."
+          if [ "${TEST_FLAG}" = "true" ]; then
+            sf project deploy start --source-dir delta/package -l RunLocalTests -w 60
+          else
+            sf project deploy start --source-dir delta/package -l NoTestRun -w 60
+          fi
 
