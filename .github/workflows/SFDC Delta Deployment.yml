@@ -1,5 +1,4 @@
-name: Salesforce CI/CD with Docker CLI + sfdx-git-delta
-
+name: Salesforce CI/CD with Docker CLI
 
 on:
   push:
@@ -30,15 +29,11 @@ jobs:
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
-        with:
-fetch-depth: 0  # Required for diff detection 
+
+      # Install sfdx-git-delta
       - name: Install sfdx-git-delta
-        run: 
-          echo "Installing sfdx-git-delta..."
-          git clone https://github.com/scolladon/sfdx-git-delta.git
-          cd sfdx-git-delta
-          npm install
-          npm link
+        run: |
+          npm install -g sfdx-git-delta
 
       # Identify branch
       - name: Print Branch
@@ -58,55 +53,30 @@ fetch-depth: 0  # Required for diff detection
           echo "${{ secrets.QA_SFDX_URL }}" > qaAuth.txt
           sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
 
-      # -----------------------------------------
-      # Generate Delta Using sfdx-git-delta 
-      # -----------------------------------------
-      - name: Generate Delta
+      # Determine changed metadata using sfdx-git-delta
+      - name: Determine Delta Changes
         run: |
-          mkdir delta
-          echo "Generating delta for changed metadata..."
-          sgd --to HEAD --from HEAD~1 --output delta/
+          echo "Determining changed metadata..."
+          sgd -t metadata --to HEAD^ --from HEAD --output delta
 
-      # -----------------------------------------
-      # Pull Request → Validate Deployment (Checkonly)
-      # -----------------------------------------
+      # Validation before merge (Pull Request)
       - name: Validate Deployment (checkonly)
         if: github.event_name == 'pull_request'
         run: |
-          echo "Running delta validation (checkonly)..."
-
-          if [ -z "$(ls -A delta)" ]; then
-            echo "No changes detected. Skipping validation."
-            exit 0
-          fi
-
+          echo "Running validation deployment (checkonly)..."
           if [ "${TEST_FLAG}" = "true" ]; then
-            sf project deploy validate \
-              -l RunLocalTests \
-              -w 60 \
-              --source-dir delta
+            sf project deploy validate -l RunLocalTests -w 60 --source-dir delta
           else
-            sf project deploy validate \
-              -l NoTestRun \
-              -w 60 \
-              --source-dir delta
+            sf project deploy validate -l NoTestRun -w 60 --source-dir delta
           fi
 
-      # -----------------------------------------
-      # Push → Actual Deployment (Delta Deploy)
-      # -----------------------------------------
+      # Actual deployment (Push to Dev or QA)
       - name: Deploy to Salesforce
         if: github.event_name == 'push'
         run: |
-          echo "Starting delta deployment..."
-
-          if [ -z "$(ls -A delta)" ]; then
-            echo "No changes to deploy. Skipping deployment."
-            exit 0
-          fi
-
+          echo "Starting actual deployment..."
           if [ "${TEST_FLAG}" = "true" ]; then
-            echo "Running tests during delta deploy..."
+            echo "Running tests during deploy..."
             sf project deploy start -l RunLocalTests -w 60 --source-dir delta
           else
             echo "Deploying without tests..."
