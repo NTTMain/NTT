@@ -33,7 +33,7 @@ jobs:
           fetch-depth: 0  # Required for diff detection
 
       # -----------------------------------------
-      # Install sfdx-git-delta (SGD)
+      # Install sfdx-git-delta 
       # -----------------------------------------
       - name: Install sfdx-git-delta
         run: |
@@ -62,7 +62,7 @@ jobs:
           sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
 
       # -----------------------------------------
-      # Generate Delta Using sfdx-git-delta (SGD)
+      # Generate Delta Using sfdx-git-delta 
       # -----------------------------------------
       - name: Generate Delta
         run: |
