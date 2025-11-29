@@ -1,118 +1,50 @@
-name: Salesforce CI/CD with Docker CLI + sfdx-git-delta
-name: Salesforce CI/CD with Docker CLI
+name: Deploy to Sandbox
 
 on:
   push:
     branches:
-      - Dev
-      - QA
-  pull_request:
-    branches:
-      - Dev
-      - QA
-  workflow_dispatch:
-    inputs:
-      run_tests:
-        description: "Run Apex tests?"
-        required: true
-        type: boolean
-        default: true
+      - feature/*
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    container:
-      image: salesforce/cli:latest-full
-
-    env:
-      TEST_FLAG: ${{ inputs.run_tests || 'true' }}
 
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      # 1. Checkout code
+      - name: Checkout repository
+        uses: actions/checkout@v3
         with:
-fetch-depth: 0  # Required for diff detection
+          fetch-depth: 0    # IMPORTANT for SGD to read git history
 
-      # -----------------------------------------
-      # Install sfdx-git-delta 
-      # -----------------------------------------
-      - name: Install sfdx-git-delta
-        run: 
-          echo "Installing sfdx-git-delta..."
-          git clone https://github.com/scolladon/sfdx-git-delta.git
-          cd sfdx-git-delta
-          npm install
-          npm link
+      # 2. Install Node + SGD
+      - name: Install Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: "18"
 
-      # Identify branch
-      - name: Print Branch
-        run: echo "Branch is ${GITHUB_REF}"
+      - name: Install SFDX-git-delta
+        run: npm install -g sfdx-git-delta
 
-      # Authenticate for Dev
-      - name: Authenticate to Dev Org
-        if: github.ref == 'refs/heads/Dev' || github.base_ref == 'Dev'
+      # 3. Install Salesforce CLI
+      - name: Install Salesforce CLI
+        uses: salesforcecli/action-sf-install@v1
+
+      # 4. Authenticate to Salesforce (Sandbox)
+      - name: Authenticate Sandbox
         run: |
-          echo "${{ secrets.DEV_SFDX_URL }}" > devAuth.txt
-          sf org login sfdx-url -f devAuth.txt -a DevOrg -s 
+          echo "${{ secrets.SF_SANDBOX_JWT }}" > server.key
+          sf org login jwt \
+            --username ${{ secrets.SF_SANDBOX_USERNAME }} \
+            --keyfile server.key \
+            --client-id ${{ secrets.SF_CLIENT_ID }} \
+            --instance-url https://test.salesforce.com
 
-      # Authenticate for QA
-      - name: Authenticate to QA Org
-        if: github.ref == 'refs/heads/QA' || github.base_ref == 'QA'
-        run: |
-          echo "${{ secrets.QA_SFDX_URL }}" > qaAuth.txt
-          sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
-
-      # -----------------------------------------
-      # Generate Delta Using sfdx-git-delta 
-      # -----------------------------------------
+      # 5. Generate delta
       - name: Generate Delta
         run: |
-          mkdir delta
-          echo "Generating delta for changed metadata..."
-          sgd --to HEAD --from HEAD~1 --output delta/
+          sgd delta --from main --to HEAD --output delta
 
-      # -----------------------------------------
-      # Pull Request → Validate Deployment (Checkonly)
-      # -----------------------------------------
-      - name: Validate Deployment (checkonly)
-        if: github.event_name == 'pull_request'
+      # 6. Deploy delta to Salesforce
+      - name: Deploy to Sandbox
         run: |
-          echo "Running delta validation (checkonly)..."
-
-          if [ -z "$(ls -A delta)" ]; then
-            echo "No changes detected. Skipping validation."
-            exit 0
-          fi
-
-          if [ "${TEST_FLAG}" = "true" ]; then
-            sf project deploy validate \
-              -l RunLocalTests \
-              -w 60 \
-              --source-dir delta
-          else
-            sf project deploy validate \
-              -l NoTestRun \
-              -w 60 \
-              --source-dir delta
-          fi
-
-      # -----------------------------------------
-      # Push → Actual Deployment (Delta Deploy)
-      # -----------------------------------------
-      - name: Deploy to Salesforce
-        if: github.event_name == 'push'
-        run: |
-          echo "Starting delta deployment..."
-
-          if [ -z "$(ls -A delta)" ]; then
-            echo "No changes to deploy. Skipping deployment."
-            exit 0
-          fi
-
-          if [ "${TEST_FLAG}" = "true" ]; then
-            echo "Running tests during delta deploy..."
-            sf project deploy start -l RunLocalTests -w 60 --source-dir delta
-          else
-            echo "Deploying without tests..."
-            sf project deploy start -l NoTestRun -w 60 --source-dir delta
-          fi
+          sf project deploy start --source delta --json
