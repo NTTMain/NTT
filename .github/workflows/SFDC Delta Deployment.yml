@@ -46,17 +46,17 @@ jobs:
           echo "${{ secrets.DEV_SFDX_URL }}" > devAuth.txt
           sf org login sfdx-url -f devAuth.txt -a DevOrg -s 
 
-      # Authenticate for QA
+        # Authenticate for QA
       - name: Authenticate to QA Org
         if: github.ref == 'refs/heads/QA' || github.base_ref == 'QA'
         run: |
           echo "${{ secrets.QA_SFDX_URL }}" > qaAuth.txt
           sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
 
-        - name: Determine Delta Changes
+      - name: Determine Delta Changes
         run: |
           echo "Determining changed metadata..."
-          npx sfdx-git-delta -t metadata --to HEAD^ --from HEAD --output delta
+          npx sfdx-git-delta -t metadata --from HEAD^ --to HEAD --output delta
 
       # Validation before merge (Pull Request)
       - name: Validate Deployment (checkonly)
