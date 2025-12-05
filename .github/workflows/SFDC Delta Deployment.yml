@@ -27,7 +27,7 @@ jobs:
       TEST_FLAG: ${{ inputs.run_tests || 'true' }}
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
 
       # Install sfdx-git-delta
@@ -39,12 +39,24 @@ jobs:
       - name: Print Branch
         run: echo "Branch is ${GITHUB_REF}"
 
-      # Authenticate for Dev
+      # Install sfdx-git-delta (for delta deploy)
+      - name: Install sfdx-git-delta
+        run: |
+          npm install sfdx-git-delta --global
+
+      # Generate delta (changed metadata only)
+      - name: Generate Delta
+        run: |
+          echo "Generating delta..."
+          mkdir delta
+          sgd --to HEAD --from HEAD~1 --output delta
+
+      # Authenticate to Dev Org
       - name: Authenticate to Dev Org
         if: github.ref == 'refs/heads/Dev' || github.base_ref == 'Dev'
         run: |
           echo "${{ secrets.DEV_SFDX_URL }}" > devAuth.txt
-          sf org login sfdx-url -f devAuth.txt -a DevOrg -s 
+          sf org login sfdx-url -f devAuth.txt -a DevOrg -s
 
         # Authenticate for QA
       - name: Authenticate to QA Org
@@ -78,6 +90,5 @@ jobs:
             echo "Running tests during deploy..."
             sf project deploy start -l RunLocalTests -w 60 --source-dir delta
           else
-            echo "Deploying without tests..."
-            sf project deploy start -l NoTestRun -w 60 --source-dir delta
+            sf project deploy start -l NoTestRun -w 60 --source-dir delta/force-app
           fi
