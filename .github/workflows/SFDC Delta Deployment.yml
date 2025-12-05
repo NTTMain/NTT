@@ -27,57 +27,58 @@ jobs:
       TEST_FLAG: ${{ inputs.run_tests || 'true' }}
 
     steps:
-      - name: Checkout Code
+      - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Required for git-delta
 
-      # Install sfdx-git-delta
-      - name: Install sfdx-git-delta
-        run: |
-          npm install -g sfdx-git-delta
-
-      # Identify branch
       - name: Print Branch
         run: echo "Branch is ${GITHUB_REF}"
 
-      # Authenticate for Dev
+      # Install sfdx-git-delta (for delta deploy)
+      - name: Install sfdx-git-delta
+        run: |
+          npm install sfdx-git-delta --global
+
+      # Generate delta (changed metadata only)
+      - name: Generate Delta
+        run: |
+          echo "Generating delta..."
+          mkdir delta
+          sgd --to HEAD --from HEAD~1 --output delta
+
+      # Authenticate to Dev Org
       - name: Authenticate to Dev Org
         if: github.ref == 'refs/heads/Dev' || github.base_ref == 'Dev'
         run: |
           echo "${{ secrets.DEV_SFDX_URL }}" > devAuth.txt
-          sf org login sfdx-url -f devAuth.txt -a DevOrg -s 
+          sf org login sfdx-url -f devAuth.txt -a DevOrg -s
 
-        # Authenticate for QA
+      # Authenticate to QA Org
       - name: Authenticate to QA Org
         if: github.ref == 'refs/heads/QA' || github.base_ref == 'QA'
         run: |
           echo "${{ secrets.QA_SFDX_URL }}" > qaAuth.txt
           sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
 
-      - name: Determine Delta Changes
-        run: |
-          echo "Determining changed metadata..."
-          npx sfdx-git-delta -t metadata --from HEAD^ --to HEAD --output delta
-
-      # Validation before merge (Pull Request)
-      - name: Validate Deployment (checkonly)
+      # Validation on Pull Request (checkonly)
+      - name: Validate Delta Deployment
         if: github.event_name == 'pull_request'
         run: |
-          echo "Running validation deployment (checkonly)..."
+          echo "Running validation deployment (checkonly) on delta..."
           if [ "${TEST_FLAG}" = "true" ]; then
-            sf project deploy validate -l RunLocalTests -w 60 --source-dir delta
+            sf project deploy validate -l RunLocalTests -w 60 --source-dir delta/force-app
           else
-            sf project deploy validate -l NoTestRun -w 60 --source-dir delta
+            sf project deploy validate -l NoTestRun -w 60 --source-dir delta/force-app
           fi
 
-      # Actual deployment (Push to Dev or QA)
-      - name: Deploy to Salesforce
+      # Actual deployment on Push
+      - name: Deploy Delta to Salesforce
         if: github.event_name == 'push'
         run: |
-          echo "Starting actual deployment..."
+          echo "Starting delta deployment..."
           if [ "${TEST_FLAG}" = "true" ]; then
-            echo "Running tests during deploy..."
-            sf project deploy start -l RunLocalTests -w 60 --source-dir delta
+            sf project deploy start -l RunLocalTests -w 60 --source-dir delta/force-app
           else
-            echo "Deploying without tests..."
-            sf project deploy start -l NoTestRun -w 60 --source-dir delta
+            sf project deploy start -l NoTestRun -w 60 --source-dir delta/force-app
           fi
