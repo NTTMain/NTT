@@ -72,7 +72,7 @@ jobs:
         run: |
           BRANCH="feature/UAT-cherry-$(date +%s)"
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-          git checkout -b $BRANCH origin/release/UAT
+          git checkout -b $BRANCH origin/UAT
           echo "Created branch: $BRANCH"
 
       # STEP 6 → Cherry-pick each commit
