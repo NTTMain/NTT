@@ -75,7 +75,12 @@ jobs:
           git checkout -b $BRANCH origin/UAT
           echo "Created branch: $BRANCH"
 
-      # STEP 6 → Cherry-pick each commit
+     # STEP 6 → Cherry-pick each commit
+      - name: Configure Git identity
+        run: |
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+      
       - name: Cherry pick all commits
         run: |
           for commit in ${{ steps.combine.outputs.all }}
@@ -83,6 +88,7 @@ jobs:
             echo "Cherry-picking $commit ..."
             git cherry-pick $commit || (echo "❌ Conflict detected. Resolve manually."; exit 1)
           done
+
 
       # STEP 7 → Push branch
       - name: Push cherry-pick branch
