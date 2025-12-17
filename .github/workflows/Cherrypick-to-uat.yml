@@ -67,9 +67,9 @@ jobs:
         id: qa_branch
         run: |
           BRANCH="feature/QA-cherry-$(date +%s)"
-          git checkout -b $BRANCH origin/QA
+          git checkout -b $BRANCH origin/UAT
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-          echo "Created QA branch: $BRANCH"
+          echo "Created UAT branch: $BRANCH"
 
       # STEP 6 → Configure Git identity
       - name: Configure Git identity
