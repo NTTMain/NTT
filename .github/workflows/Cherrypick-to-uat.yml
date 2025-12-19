@@ -94,7 +94,7 @@ jobs:
           for commit in ${{ steps.combine.outputs.all }}
           do
             echo "Cherry-picking $commit ..."
-            git cherry-pick $commit || (echo "❌ Conflict detected. Resolve manually."; exit 1)
+            git cherry-pick $commit 
           done
 
       # STEP 8 → Push QA branch
