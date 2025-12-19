@@ -45,11 +45,11 @@ jobs:
           npm install sfdx-git-delta --global
 
       # Generate delta (changed metadata only)
-- name: Generate Delta
-  run: |
-    echo "Installing SGD CLI..."
+      - name: Generate Delta
+        run: |
+            echo "Installing SGD CLI..."
     # Install Node.js (required if using npm)
-    curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
     sudo apt-get install -y nodejs
     # Install sgd globally
     npm install -g sgd
