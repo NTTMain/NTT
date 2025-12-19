@@ -63,23 +63,23 @@ jobs:
           exit 1
 
       # STEP 5 → Create or reuse QA cherry-pick branch
-- name: Create or reuse QA cherry-pick branch
-  id: qa_branch
-  run: |
-    BRANCH="feature/QA-cherry-$(date +%s)"
+      - name: Create or reuse QA cherry-pick branch
+        id: qa_branch
+        run: |
+          BRANCH="feature/QA-cherry-$(date +%s)"
+      
+          echo "Checking if branch exists on remote: $BRANCH"
+      
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            echo "✅ Branch exists on remote. Checking it out..."
+            git checkout -b "$BRANCH" "origin/$BRANCH"
+          else
+            echo "🆕 Branch does not exist. Creating new branch from UAT..."
+            git checkout -b "$BRANCH" origin/UAT
+          fi
 
-    echo "Checking if branch exists on remote: $BRANCH"
-
-    if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
-      echo "✅ Branch exists on remote. Checking it out..."
-      git checkout -b "$BRANCH" "origin/$BRANCH"
-    else
-      echo "🆕 Branch does not exist. Creating new branch from UAT..."
-      git checkout -b "$BRANCH" origin/UAT
-    fi
-
-    echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-    echo "Using branch: $BRANCH"
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "Using branch: $BRANCH"
 
 
       # STEP 6 → Configure Git identity
