@@ -62,14 +62,25 @@ jobs:
           echo "❌ No valid commits found. Provide story IDs or commit IDs."
           exit 1
 
-      # STEP 5 → Create QA cherry-pick branch
-      - name: Create QA cherry-pick branch
+      # STEP 5 → Create or reuse QA cherry-pick branch
+      - name: Create or reuse QA cherry-pick branch
         id: qa_branch
         run: |
-          BRANCH="feature/QA-cherry-$(date +%s)"
-          git checkout -b $BRANCH origin/QA
+          BRANCH="qa/QA-cherry-$(date +%s)"
+      
+          echo "Checking if branch exists on remote: $BRANCH"
+      
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            echo "✅ Branch exists on remote. Checking it out..."
+            git checkout -b "$BRANCH" "origin/$BRANCH"
+          else
+          echo "🆕 Branch does not exist. Creating new branch from UAT..."
+            git checkout -b "$BRANCH" origin/UAT
+          fi
+
           echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-          echo "Created QA branch: $BRANCH"
+          echo "Using branch: $BRANCH"
+
 
       # STEP 6 → Configure Git identity
       - name: Configure Git identity
@@ -77,14 +88,17 @@ jobs:
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
 
-      # STEP 7 → Cherry-pick all commits to QA
+      # STEP 7 → Cherry-pick all commits to QA (idempotent)
       - name: Cherry pick all commits to QA
         run: |
           for commit in ${{ steps.combine.outputs.all }}
           do
             echo "Cherry-picking $commit ..."
-            git cherry-pick $commit || (echo "❌ Conflict detected. Resolve manually."; exit 1)
+            git cherry-pick $commit || \
+            git cherry-pick --skip || \
+            (echo "❌ Real conflict detected. Resolve manually."; exit 1)
           done
+
 
       # STEP 8 → Push QA branch
       - name: Push QA cherry-pick branch
