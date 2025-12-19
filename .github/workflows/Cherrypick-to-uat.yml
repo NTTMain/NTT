@@ -74,7 +74,7 @@ jobs:
             echo "✅ Branch exists on remote. Checking it out..."
             git checkout -b "$BRANCH" "origin/$BRANCH"
           else
-            echo "🆕 Branch does not exist. Creating new branch from UAT..."
+          echo "🆕 Branch does not exist. Creating new branch from UAT..."
             git checkout -b "$BRANCH" origin/UAT
           fi
 
