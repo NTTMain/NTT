@@ -88,14 +88,17 @@ jobs:
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
 
-      # STEP 7 → Cherry-pick all commits to QA
-      - name: Cherry pick all commits to QA
-        run: |
-          for commit in ${{ steps.combine.outputs.all }}
-          do
-            echo "Cherry-picking $commit ..."
-            git cherry-pick $commit 
-          done
+      # STEP 7 → Cherry-pick all commits to QA (idempotent)
+- name: Cherry pick all commits to QA
+  run: |
+    for commit in ${{ steps.combine.outputs.all }}
+    do
+      echo "Cherry-picking $commit ..."
+      git cherry-pick $commit || \
+      git cherry-pick --skip || \
+      (echo "❌ Real conflict detected. Resolve manually."; exit 1)
+    done
+
 
       # STEP 8 → Push QA branch
       - name: Push QA cherry-pick branch
