@@ -88,7 +88,7 @@ jobs:
           git config user.email "github-actions@github.com"
           git config user.name "GitHub Actions"
 
-      # STEP 7 → Cherry-pick all commits to QA
+      # STEP 7 → Cherry-pick all commits to QA (idempotent)
       - name: Cherry pick all commits to QA
         run: |
           for commit in ${{ steps.combine.outputs.all }}
