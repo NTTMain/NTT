@@ -1,4 +1,4 @@
-name: Cherry Pick Multiple Stories or Commits to UAT
+name: Cherry Pick Multiple Stories or Commits to QA & UAT
 
 on:
   workflow_dispatch:
@@ -7,7 +7,6 @@ on:
         description: "Enter comma-separated Story IDs (e.g. ST-101,ST-205)"
         required: false
         type: string
-
       commit_ids:
         description: "Enter comma-separated Commit IDs (optional)"
         required: false
@@ -18,21 +17,20 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Checkout full repo history
+      # STEP 0 → Checkout full repo
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # STEP 1 → Convert comma-separated input into arrays
+      # STEP 1 → Parse inputs
       - name: Parse inputs
         id: parse
         run: |
           echo "stories=$(echo '${{ github.event.inputs.story_ids }}' | tr ',' ' ')" >> $GITHUB_OUTPUT
           echo "commits_input=$(echo '${{ github.event.inputs.commit_ids }}' | tr ',' ' ')" >> $GITHUB_OUTPUT
 
-
-      # STEP 2 → Fetch commits based on story IDs
+      # STEP 2 → Find commits from Story IDs
       - name: Find commits from Story IDs
         id: find_story_commits
         run: |
@@ -45,12 +43,10 @@ jobs:
               STORY_COMMITS="$STORY_COMMITS $MATCH"
             fi
           done
-
           echo "commits=$STORY_COMMITS" >> $GITHUB_OUTPUT
           echo "Story-based commits found: $STORY_COMMITS"
 
-
-      # STEP 3 → Combine both story commits + manually-entered commits
+      # STEP 3 → Combine story commits + manual commits
       - name: Combine all commits
         id: combine
         run: |
@@ -59,42 +55,68 @@ jobs:
           echo "all=$ALL_COMMITS" >> $GITHUB_OUTPUT
           echo "Final commit list: $ALL_COMMITS"
 
-      # STEP 4 → Fail if there are zero commits
+      # STEP 4 → Validate commits
       - name: Validate commits
         if: ${{ steps.combine.outputs.all == '' }}
         run: |
           echo "❌ No valid commits found. Provide story IDs or commit IDs."
           exit 1
 
-      # STEP 5 → Create temporary branch
-      - name: Create UAT cherry-pick branch
-        id: branch
+      # STEP 5 → Create or reuse QA cherry-pick branch
+      - name: Create or reuse QA cherry-pick branch
+        id: qa_branch
         run: |
-          BRANCH="feature/UAT-cherry-$(date +%s)"
-          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
-          git checkout -b $BRANCH origin/release/UAT
-          echo "Created branch: $BRANCH"
+          BRANCH="qa/QA-cherry-$(date +%s)"
+      
+          echo "Checking if branch exists on remote: $BRANCH"
+      
+          if git ls-remote --exit-code --heads origin "$BRANCH" > /dev/null; then
+            echo "✅ Branch exists on remote. Checking it out..."
+            git checkout -b "$BRANCH" "origin/$BRANCH"
+          else
+          echo "🆕 Branch does not exist. Creating new branch from UAT..."
+            git checkout -b "$BRANCH" origin/UAT
+          fi
 
-      # STEP 6 → Cherry-pick each commit
-      - name: Cherry pick all commits
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          echo "Using branch: $BRANCH"
+
+
+      # STEP 6 → Configure Git identity
+      - name: Configure Git identity
+        run: |
+          git config user.email "github-actions@github.com"
+          git config user.name "GitHub Actions"
+
+      # STEP 7 → Cherry-pick all commits to QA (idempotent)
+      - name: Cherry pick all commits to QA
         run: |
           for commit in ${{ steps.combine.outputs.all }}
           do
             echo "Cherry-picking $commit ..."
-            git cherry-pick $commit || (echo "❌ Conflict detected. Resolve manually."; exit 1)
+            git cherry-pick $commit || \
+            git cherry-pick --skip || \
+            (echo "❌ Real conflict detected. Resolve manually."; exit 1)
           done
 
-      # STEP 7 → Push branch
-      - name: Push cherry-pick branch
+
+      # STEP 8 → Push QA branch
+      - name: Push QA cherry-pick branch
         run: |
           git push origin HEAD
 
-      # STEP 8 → Open PR into UAT branch
+      # STEP 9 → Optional: Deploy QA branch (replace with your deployment command)
+      - name: Deploy to QA
+        run: |
+          echo "Deploying branch ${{ steps.qa_branch.outputs.branch }} to QA..."
+          # Add your QA deployment commands here, e.g., ./deploy_to_qa.sh
+
+      # STEP 10 → Create PR from QA branch to UAT
       - name: Create Pull Request to UAT
         uses: repo-sync/pull-request@v2
         with:
-          source_branch: ${{ steps.branch.outputs.branch }}
-          destination_branch: "release/UAT"
+          source_branch: ${{ steps.qa_branch.outputs.branch }}
+          destination_branch: "UAT"
           pr_title: "Cherry Pick → UAT: ${{ github.event.inputs.story_ids }} ${{ github.event.inputs.commit_ids }}"
           pr_body: |
             Automated cherry-pick PR for:
@@ -104,5 +126,4 @@ jobs:
 
             **Final Commits Cherry-Picked:**
             ${{ steps.combine.outputs.all }}
-
           github_token: ${{ secrets.GITHUB_TOKEN }}
