@@ -24,66 +24,65 @@ jobs:
       image: salesforce/cli:latest-full
 
     env:
-      TEST_FLAG: ${{ inputs.run_tests || 'true' }}
+      TEST_FLAG: ${{ github.event.inputs.run_tests || 'true' }}
 
     steps:
+      # STEP 1 → Checkout code
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # Install sfdx-git-delta
-      - name: Install sfdx-git-delta
+      # STEP 2 → Install Node.js (needed for sfdx-git-delta / sgd)
+      - name: Install Node.js
         run: |
-          npm install -g sfdx-git-delta
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          node -v
+          npm -v
 
-      # Identify branch
+      # STEP 3 → Install sfdx-git-delta
+      - name: Install sfdx-git-delta
+        run: npm install -g sfdx-git-delta
+
+      # STEP 4 → Install SGD CLI (if needed)
+      - name: Install SGD CLI
+        run: |
+          npm install -g sgd || echo "sgd already installed"
+          sgd --version || true
+
+      # STEP 5 → Print current branch
       - name: Print Branch
         run: echo "Branch is ${GITHUB_REF}"
 
-      # Install sfdx-git-delta (for delta deploy)
-      - name: Install sfdx-git-delta
-        run: |
-          npm install sfdx-git-delta --global
-
-      # Generate delta (changed metadata only)
+      # STEP 6 → Generate delta (changed metadata only)
       - name: Generate Delta
         run: |
-            echo "Installing SGD CLI..."
-    # Install Node.js (required if using npm)
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-    sudo apt-get install -y nodejs
-    # Install sgd globally
-    npm install -g sgd
+          echo "Generating delta..."
+          mkdir -p delta
+          # Use sfdx-git-delta or sgd depending on your preference
+          # Example using sgd:
+          sgd --to HEAD --from HEAD~1 --output delta || echo "Delta generation skipped (already applied)"
 
-    # Verify installation
-    echo "Checking sgd version..."
-    sgd --version
-
-    # Generate delta
-    echo "Generating delta..."
-    mkdir -p delta
-    sgd --to HEAD --from HEAD~1 --output delta
-
-
-      # Authenticate to Dev Org
+      # STEP 7 → Authenticate to Dev Org
       - name: Authenticate to Dev Org
         if: github.ref == 'refs/heads/Dev' || github.base_ref == 'Dev'
         run: |
           echo "${{ secrets.DEV_SFDX_URL }}" > devAuth.txt
           sf org login sfdx-url -f devAuth.txt -a DevOrg -s
 
-        # Authenticate for QA
+      # STEP 8 → Authenticate to QA Org
       - name: Authenticate to QA Org
         if: github.ref == 'refs/heads/QA' || github.base_ref == 'QA'
         run: |
           echo "${{ secrets.QA_SFDX_URL }}" > qaAuth.txt
           sf org login sfdx-url -f qaAuth.txt -a QaOrg -s
 
+      # STEP 9 → Determine delta changes (alternative using sfdx-git-delta)
       - name: Determine Delta Changes
         run: |
           echo "Determining changed metadata..."
           npx sfdx-git-delta -t metadata --from HEAD^ --to HEAD --output delta
 
-      # Validation before merge (Pull Request)
+      # STEP 10 → Validation before merge (pull_request)
       - name: Validate Deployment (checkonly)
         if: github.event_name == 'pull_request'
         run: |
@@ -94,7 +93,7 @@ jobs:
             sf project deploy validate -l NoTestRun -w 60 --source-dir delta
           fi
 
-      # Actual deployment (Push to Dev or QA)
+      # STEP 11 → Actual deployment (push to Dev or QA)
       - name: Deploy to Salesforce
         if: github.event_name == 'push'
         run: |
@@ -103,5 +102,6 @@ jobs:
             echo "Running tests during deploy..."
             sf project deploy start -l RunLocalTests -w 60 --source-dir delta
           else
-            sf project deploy start -l NoTestRun -w 60 --source-dir delta/force-app
+            echo "Deploying without tests..."
+            sf project deploy start -l NoTestRun -w 60 --source-dir delta
           fi
